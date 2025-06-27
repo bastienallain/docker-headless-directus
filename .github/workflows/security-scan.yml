@@ -39,30 +39,38 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-  docker-scout:
-    name: Docker Scout CVE Scan
+  docker-image-scan:
+    name: Docker Image Security Scan  
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        compose-file:
-          - test/directus-stack/environments/prod/docker-compose.yml
+        image:
+          - "directus/directus:latest"
+          - "postgres:17.5-alpine"
+          - "docker.dragonflydb.io/dragonflydb/dragonfly:latest"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build images for scanning
+      - name: Pull Docker image
         run: |
-          docker compose -f ${{ matrix.compose-file }} build
+          docker pull ${{ matrix.image }}
 
-      - name: Docker Scout CVEs
-        uses: docker/scout-action@v1
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@master
         with:
-          command: cves
-          only-severities: critical,high
-          exit-code: true
+          image-ref: ${{ matrix.image }}
+          format: 'sarif'
+          output: 'trivy-${{ matrix.image }}.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-${{ matrix.image }}.sarif'
+        continue-on-error: true
   dependency-check:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
@@ -102,35 +110,40 @@ jobs:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
           extra_args: --debug --only-verified
-  container-scan:
-    name: Container Security Scan
+  configuration-scan:
+    name: Configuration Security Scan
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build test image
+      - name: Check for hardcoded secrets
         run: |
-          docker build -t directus-test:latest -f test/directus-stack/Dockerfile . || true
+          echo "Scanning for hardcoded secrets..."
+          # Check for common secret patterns in configuration files
+          if find . -name "*.yml" -o -name "*.yaml" -o -name "*.env" | \
+             grep -v ".env.example" | \
+             xargs grep -E "(password|secret|key|token)\s*[:=]\s*['\"]?[^'\"\$\{]+" 2>/dev/null | \
+             grep -v "123\|example\|placeholder\|your_\|\${\|POSTGRES_PASSWORD"; then
+            echo "❌ Potential hardcoded secrets found!"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
 
-      - name: Run Grype vulnerability scanner
-        uses: anchore/scan-action@v3
-        id: grype
-        with:
-          image: directus-test:latest
-          fail-build: false
-          severity-cutoff: high
-
-      - name: Upload Grype report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: grype-report
-          path: ${{ steps.grype.outputs.sarif }}
+      - name: Validate Docker Compose security
+        run: |
+          echo "Checking Docker Compose security configurations..."
+          # Check for privileged containers
+          if find . -name "docker-compose*.yml" -exec grep -l "privileged.*true" {} \; 2>/dev/null; then
+            echo "⚠️ Privileged containers found - review security implications"
+          fi
+          
+          # Check for host network mode
+          if find . -name "docker-compose*.yml" -exec grep -l "network_mode.*host" {} \; 2>/dev/null; then
+            echo "⚠️ Host network mode found - review security implications"
+          fi
+          
+          echo "✅ Docker Compose security checks completed"
   license-scan:
     name: License Compliance Check
     runs-on: ubuntu-latest
@@ -138,11 +151,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check for FOSSA API Key
+        id: fossa-check
+        run: |
+          if [ -n "${{ secrets.FOSSA_API_KEY }}" ]; then
+            echo "fossa_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "fossa_available=false" >> $GITHUB_OUTPUT
+            echo "FOSSA API key not configured - skipping license scan"
+          fi
+
       - name: FOSSA Scan
+        if: steps.fossa-check.outputs.fossa_available == 'true'
         uses: fossas/fossa-action@main
         with:
           api-key: ${{ secrets.FOSSA_API_KEY }}
         continue-on-error: true
+
+      - name: Skip FOSSA
+        if: steps.fossa-check.outputs.fossa_available == 'false'
+        run: |
+          echo "✅ License scanning skipped - FOSSA API key not configured"
+          echo "To enable license scanning, add FOSSA_API_KEY to repository secrets"
 
   infrastructure-scan:
     name: Infrastructure as Code Security

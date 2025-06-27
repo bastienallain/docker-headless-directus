@@ -1,8 +1,9 @@
+---
 name: PR Validation
 
 on:
   pull_request:
-    branches: 
+    branches:
       - main
       - develop
   push:
@@ -20,7 +21,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Validate docker-compose syntax
         run: |
           echo "Validating Docker Compose files..."
@@ -28,27 +29,27 @@ jobs:
             echo "Checking: $file"
             docker compose -f "$file" config --quiet || exit 1
           done
-          
+
   dockerfile-lint:
     name: Lint Dockerfiles
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Run Hadolint
         uses: hadolint/hadolint-action@v3.1.0
         with:
           recursive: true
           failure-threshold: warning
-          
+
   yaml-lint:
     name: Lint YAML files
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Lint YAML files
         uses: ibiqlik/action-yamllint@v3
         with:
@@ -60,20 +61,20 @@ jobs:
                 level: warning
               truthy:
                 allowed-values: ['true', 'false', 'on', 'off']
-                
+
   shell-lint:
     name: Lint Shell Scripts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         with:
           severity: warning
           check_together: 'yes'
-          
+
   docker-build-test:
     name: Test Docker Build
     runs-on: ubuntu-latest
@@ -85,30 +86,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: Test Docker Compose build
         run: |
           docker compose -f ${{ matrix.compose-file }} build --dry-run
-          
+
   directus-config-validation:
     name: Validate Directus Configuration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Check for sensitive data
         run: |
           echo "Checking for exposed secrets..."
           # Check for common patterns of exposed secrets
-          if grep -r -E "(password|secret|api_key|token)\s*[:=]\s*['\"]?[^'\"\$\{]+" --include="*.yml" --include="*.yaml" --include="*.env" --exclude-dir=".git" .; then
+          # Check for common patterns of exposed secrets
+          if grep -r -E "(password|secret|api_key|token)\s*[:=]\s*['\"]?[^'\"\$\{]+" \
+            --include="*.yml" --include="*.yaml" --include="*.env" --exclude-dir=".git" .; then
             echo "WARNING: Potential hardcoded secrets found!"
             exit 1
           fi
-          
+
       - name: Validate environment files
         run: |
           echo "Checking environment file structure..."

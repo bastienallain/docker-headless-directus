@@ -1,2 +1,115 @@
-.*
+# 🔒 Security - Never commit these files
+.env
+.env.local
+.env.production
+.env.development
+secrets/
+*.pem
+*.key
+*.crt
+
+# 🐳 Docker
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# 📊 Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 🗃️ Database
+backups/
+dumps/
+*.sql
+*.db
+*.sqlite
+
+# 💾 Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# 📦 Dependency directories
+node_modules/
+jspm_packages/
+
+# 🔧 Temporary folders
+tmp/
+temp/
+
+# 🖥️ OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 🔧 Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 🎯 Directus specific
+directus/uploads/
+directus/extensions/
+directus/database/
+directus/cache/
+
+# 🐳 Docker volumes
+postgres_data/
+redis_data/
+cache_data/
+uploads_data/
+extensions_data/
+
+# 🔧 Local development
+.local/
+local/
+
+# 🧪 Testing
+test-local/
+*.test.local.*
+
+# 🔒 Certificate files
+*.cer
+*.p12
+*.pfx
+
+# 🗂️ Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# 💻 JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# 📝 Vim
+*.swp
+*.swo
+
+# 🔧 VS Code
+.vscode/
+!.vscode/extensions.json
+
+# 📊 Performance monitoring
+.clinic/
+clinic/
+
+# 🔧 PM2
+.pm2/
+ecosystem.config.js
+
+# Allow important files
 !.gitignore
+!.github

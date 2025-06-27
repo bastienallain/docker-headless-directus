@@ -1,0 +1,121 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: 
+      - main
+      - develop
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  docker-compose-validation:
+    name: Validate Docker Compose Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Validate docker-compose syntax
+        run: |
+          echo "Validating Docker Compose files..."
+          find . -name "docker-compose*.yml" -o -name "docker-compose*.yaml" | while read -r file; do
+            echo "Checking: $file"
+            docker compose -f "$file" config --quiet || exit 1
+          done
+          
+  dockerfile-lint:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+          failure-threshold: warning
+          
+  yaml-lint:
+    name: Lint YAML files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Lint YAML files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_data: |
+            extends: default
+            rules:
+              line-length:
+                max: 120
+                level: warning
+              truthy:
+                allowed-values: ['true', 'false', 'on', 'off']
+                
+  shell-lint:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          check_together: 'yes'
+          
+  docker-build-test:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compose-file:
+          - test/directus-stack/environments/dev/docker-compose.yml
+          - test/directus-stack/environments/prod/docker-compose.yml
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Test Docker Compose build
+        run: |
+          docker compose -f ${{ matrix.compose-file }} build --dry-run
+          
+  directus-config-validation:
+    name: Validate Directus Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Check for sensitive data
+        run: |
+          echo "Checking for exposed secrets..."
+          # Check for common patterns of exposed secrets
+          if grep -r -E "(password|secret|api_key|token)\s*[:=]\s*['\"]?[^'\"\$\{]+" --include="*.yml" --include="*.yaml" --include="*.env" --exclude-dir=".git" .; then
+            echo "WARNING: Potential hardcoded secrets found!"
+            exit 1
+          fi
+          
+      - name: Validate environment files
+        run: |
+          echo "Checking environment file structure..."
+          find . -name "*.env.example" -o -name "*.env.template" | while read -r file; do
+            echo "Validating: $file"
+            # Check for required Directus variables
+            if ! grep -q "DIRECTUS_" "$file"; then
+              echo "WARNING: No Directus configuration found in $file"
+            fi
+          done

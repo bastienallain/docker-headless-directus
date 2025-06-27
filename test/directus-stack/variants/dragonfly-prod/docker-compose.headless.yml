@@ -1,3 +1,4 @@
+---
 # Docker Compose pour Directus Headless API + Asset Server optimisé
 
 services:
@@ -120,7 +121,7 @@ services:
       REDIS_HOST: dragonfly
       REDIS_PORT: 6379
       REDIS_PASSWORD: headless_dragonfly_456
-      
+
       # Cache TTL pour usage headless
       CACHE_TTL: 24h
       CACHE_AUTO_PURGE: "true"
@@ -141,12 +142,12 @@ services:
       ASSETS_TRANSFORM_IMAGE_TRANSFORMS: all
       ASSETS_REQUIRE_AUTHENTICATION: "false"
       ASSETS_CONTENT_SECURITY_POLICY: ""
-      
+
       # SHARP CPU OPTIMISÉ (génération images)
       ASSETS_TRANSFORM_MAX_CONCURRENT: 16
       ASSETS_TRANSFORM_TIMEOUT: 60000
       ASSETS_TRANSFORM_IMAGE_UPSCALE: "true"
-      
+
       # Upload volumineux pour assets
       FILES_MAX_UPLOAD_SIZE: 1GB
       FILES_MIME_TYPE_ALLOW_LIST: "image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml,video/mp4,video/webm,application/pdf,application/zip"
@@ -180,7 +181,7 @@ services:
       # OPTIMISATIONS REQUÊTES API
       QUERY_LIMIT_DEFAULT: 50
       QUERY_LIMIT_MAX: 5000
-      
+
       # Pool de connexions léger (moins de writes)
       DB_CONNECTION_TIMEOUT: 60000
       DB_POOL_MIN: 5

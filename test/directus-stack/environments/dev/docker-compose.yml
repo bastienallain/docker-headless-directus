@@ -1,3 +1,4 @@
+---
 services:
   # =================================
   # DATABASE POSTGRESQL
@@ -95,7 +96,7 @@ services:
       ASSETS_TRANSFORM_IMAGE_FORMAT: auto
       ASSETS_TRANSFORM_IMAGE_TRANSFORMS: all
       ASSETS_REQUIRE_AUTHENTICATION: false
-      
+
       # Optimisations upload
       FILES_MAX_UPLOAD_SIZE: 100MB
       FILES_MIME_TYPE_ALLOW_LIST: image/jpeg,image/png,image/webp,image/gif,application/pdf

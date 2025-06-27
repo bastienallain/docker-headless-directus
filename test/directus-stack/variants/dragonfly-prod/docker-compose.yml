@@ -1,3 +1,4 @@
+---
 # Docker Compose pour Directus avec Dragonfly - Production
 
 services:
@@ -172,13 +173,12 @@ services:
       STORAGE_LOCAL_ROOT: ./uploads
 
       # Configuration des images et assets
-      ASSETS_CACHE_TTL: 30d
       ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 4000
       ASSETS_TRANSFORM_IMAGE_QUALITY: 85
       ASSETS_TRANSFORM_IMAGE_FORMAT: auto
       ASSETS_TRANSFORM_IMAGE_TRANSFORMS: key
       ASSETS_REQUIRE_AUTHENTICATION: "true"
-      
+
       # Optimisations upload
       FILES_MAX_UPLOAD_SIZE: 100MB
       FILES_MIME_TYPE_ALLOW_LIST: image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4
@@ -203,7 +203,6 @@ services:
       # Extensions
       EXTENSIONS_PATH: ./extensions
       EXTENSIONS_AUTO_RELOAD: "false"
-      ASSETS_TRANSFORM_MAX_CONCURRENT: 4
 
       # Logs
       LOG_LEVEL: warn
@@ -215,7 +214,7 @@ services:
       REFRESH_TOKEN_COOKIE_SECURE: "true"
       REFRESH_TOKEN_COOKIE_SAME_SITE: strict
       REFRESH_TOKEN_COOKIE_NAME: directus_refresh_token
-      
+
       PASSWORD_RESET_URL_ALLOW_LIST: ${PUBLIC_URL}
       USER_INVITE_URL_ALLOW_LIST: ${PUBLIC_URL}
 
@@ -227,16 +226,16 @@ services:
       CACHE_PERMISSIONS: "true"
       CACHE_VALUE_MAX_SIZE: 32MB
       CACHE_HEALTHCHECK_THRESHOLD: 100
-      
+
       # Optimisations requêtes
       QUERY_LIMIT_DEFAULT: 100
       QUERY_LIMIT_MAX: 2000
-      
+
       # Pool de connexions database
       DB_CONNECTION_TIMEOUT: 30000
       DB_POOL_MIN: 10
       DB_POOL_MAX: 50
-      
+
       # Optimisations assets
       ASSETS_CACHE_TTL: 7d
       ASSETS_TRANSFORM_MAX_CONCURRENT: 8

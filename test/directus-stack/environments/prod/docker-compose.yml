@@ -1,3 +1,4 @@
+---
 version: '3.8'
 
 services:
@@ -124,7 +125,7 @@ services:
       ASSETS_TRANSFORM_IMAGE_FORMAT: auto
       ASSETS_TRANSFORM_IMAGE_TRANSFORMS: key
       ASSETS_REQUIRE_AUTHENTICATION: "true"
-      
+
       # Optimisations upload
       FILES_MAX_UPLOAD_SIZE: 50MB
       FILES_MIME_TYPE_ALLOW_LIST: image/jpeg,image/png,image/webp,image/gif,application/pdf
@@ -161,7 +162,7 @@ services:
       REFRESH_TOKEN_COOKIE_SECURE: "true"
       REFRESH_TOKEN_COOKIE_SAME_SITE: strict
       REFRESH_TOKEN_COOKIE_NAME: directus_refresh_token
-      
+
       PASSWORD_RESET_URL_ALLOW_LIST: ${PUBLIC_URL}
       USER_INVITE_URL_ALLOW_LIST: ${PUBLIC_URL}
 

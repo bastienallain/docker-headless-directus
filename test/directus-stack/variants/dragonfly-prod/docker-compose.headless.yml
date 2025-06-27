@@ -1,0 +1,266 @@
+# Docker Compose pour Directus Headless API + Asset Server optimisé
+
+services:
+  # =================================
+  # DATABASE POSTGRESQL
+  # =================================
+  postgres:
+    image: postgres:17.5-alpine
+    container_name: directus-headless-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: directus_headless
+      POSTGRES_USER: directus_user
+      POSTGRES_PASSWORD: headless_password_123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../shared/init-db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5434:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus_user -d directus_headless"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # =================================
+  # DRAGONFLY CACHE (API-OPTIMIZED)
+  # =================================
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: directus-headless-dragonfly
+    restart: always
+    ulimits:
+      memlock: -1
+    command: [
+      "dragonfly",
+      "--logtostderr",
+      "--cache_mode=true",
+      "--maxmemory=4GB",
+      "--requirepass=headless_dragonfly_456",
+      "--num_shards=0",
+      "--conn_io_threads=0",
+      "--tcp_nodelay=true",
+      "--max_eviction_per_heartbeat=200",
+      "--tcp_backlog=2048",
+      "--hz=50"
+    ]
+    volumes:
+      - cache_data:/data
+    ports:
+      - "6381:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "headless_dragonfly_456", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 5G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # =================================
+  # DIRECTUS CMS API + ASSET SERVER
+  # =================================
+  directus:
+    image: directus/directus:latest
+    container_name: directus-headless
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    environment:
+      # Base de données (read-heavy optimized)
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: directus_headless
+      DB_USER: directus_user
+      DB_PASSWORD: headless_password_123
+      DB_SSL: "false"
+
+      # Configuration générale
+      KEY: 255d861b-5ea1-5996-9aa3-922530ec40b1
+      SECRET: 6116487b-cda1-52c2-b5b5-c8022c45e263
+
+      # Admin (setup initial seulement)
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: headless_admin_123
+
+      # URLs et CORS (ouvert pour apps externes)
+      PUBLIC_URL: http://localhost:8057
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "*"
+      CORS_CREDENTIALS: "false"
+      CORS_METHODS: "GET,POST,PATCH,DELETE,OPTIONS"
+      CORS_ALLOWED_HEADERS: "Content-Type,Authorization,X-Requested-With"
+
+      # Cache API AGRESSIF (pour apps externes)
+      CACHE_ENABLED: "true"
+      CACHE_STORE: redis
+      REDIS_HOST: dragonfly
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: headless_dragonfly_456
+      
+      # Cache TTL pour usage headless
+      CACHE_TTL: 24h
+      CACHE_AUTO_PURGE: "true"
+      CACHE_SYSTEM_TTL: 48h
+      CACHE_SCHEMA: "true"
+      CACHE_PERMISSIONS: "false"
+      CACHE_VALUE_MAX_SIZE: 64MB
+
+      # Upload et storage (gros assets)
+      STORAGE_LOCATIONS: local
+      STORAGE_LOCAL_ROOT: ./uploads
+
+      # ASSETS OPTIMISÉS POUR CDN/APPS EXTERNES
+      ASSETS_CACHE_TTL: 365d
+      ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 8000
+      ASSETS_TRANSFORM_IMAGE_QUALITY: 90
+      ASSETS_TRANSFORM_IMAGE_FORMAT: auto
+      ASSETS_TRANSFORM_IMAGE_TRANSFORMS: all
+      ASSETS_REQUIRE_AUTHENTICATION: "false"
+      ASSETS_CONTENT_SECURITY_POLICY: ""
+      
+      # SHARP CPU OPTIMISÉ (génération images)
+      ASSETS_TRANSFORM_MAX_CONCURRENT: 16
+      ASSETS_TRANSFORM_TIMEOUT: 60000
+      ASSETS_TRANSFORM_IMAGE_UPSCALE: "true"
+      
+      # Upload volumineux pour assets
+      FILES_MAX_UPLOAD_SIZE: 1GB
+      FILES_MIME_TYPE_ALLOW_LIST: "image/jpeg,image/png,image/webp,image/gif,image/avif,image/svg+xml,video/mp4,video/webm,application/pdf,application/zip"
+
+      # Rate limiting adapté API calls
+      RATE_LIMITER_ENABLED: "true"
+      RATE_LIMITER_STORE: redis
+      RATE_LIMITER_REDIS_HOST: dragonfly
+      RATE_LIMITER_REDIS_PASSWORD: headless_dragonfly_456
+      RATE_LIMITER_GLOBAL_RATE: 1000
+      RATE_LIMITER_GLOBAL_DURATION: 60
+
+      # Email (webhooks notifications)
+      EMAIL_FROM: noreply@headless.local
+      EMAIL_TRANSPORT: sendmail
+
+      # Extensions
+      EXTENSIONS_PATH: ./extensions
+      EXTENSIONS_AUTO_RELOAD: "false"
+
+      # Logs optimisés pour monitoring
+      LOG_LEVEL: warn
+      LOG_STYLE: json
+
+      # Sécurité adaptée API publique
+      ACCESS_TOKEN_TTL: 1h
+      REFRESH_TOKEN_TTL: 30d
+      REFRESH_TOKEN_COOKIE_SECURE: "false"
+      REFRESH_TOKEN_COOKIE_SAME_SITE: none
+
+      # OPTIMISATIONS REQUÊTES API
+      QUERY_LIMIT_DEFAULT: 50
+      QUERY_LIMIT_MAX: 5000
+      
+      # Pool de connexions léger (moins de writes)
+      DB_CONNECTION_TIMEOUT: 60000
+      DB_POOL_MIN: 5
+      DB_POOL_MAX: 20
+
+      # Mode production
+      NODE_ENV: production
+
+      # Telemetry
+      TELEMETRY: "false"
+
+      # Webhooks pour apps headless
+      WEBHOOKS_ENABLED: "true"
+      WEBHOOKS_TIMEOUT: 30000
+
+    volumes:
+      - uploads_data:/directus/uploads
+      - extensions_data:/directus/extensions
+    ports:
+      - "8057:8055"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+  # =================================
+  # REDIS COMMANDER (DEBUG CACHE)
+  # =================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: directus-headless-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: dragonfly:dragonfly:6379:0:headless_dragonfly_456
+    ports:
+      - "8082:8081"
+    networks:
+      - backend
+    depends_on:
+      - dragonfly
+
+  # =================================
+  # ADMINER (DEBUG DB)
+  # =================================
+  adminer:
+    image: adminer:4.8.1-standalone
+    container_name: directus-headless-adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: dracula
+    ports:
+      - "8083:8080"
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local
+  cache_data:
+    driver: local
+  uploads_data:
+    driver: local
+  extensions_data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge

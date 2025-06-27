@@ -1,0 +1,98 @@
+# Version simplifiée pour debug
+
+services:
+  # =================================
+  # DATABASE POSTGRESQL
+  # =================================
+  postgres:
+    image: postgres:17.5-alpine
+    container_name: directus-simple-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: directus_simple
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: simple123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus -d directus_simple"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =================================
+  # DRAGONFLY SIMPLE
+  # =================================
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: directus-simple-dragonfly
+    restart: always
+    command: ["dragonfly", "--logtostderr", "--cache_mode"]
+    ports:
+      - "6382:6379"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =================================
+  # DIRECTUS SIMPLE
+  # =================================
+  directus:
+    image: directus/directus:latest
+    container_name: directus-simple
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    environment:
+      # Base de données
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: directus_simple
+      DB_USER: directus
+      DB_PASSWORD: simple123
+
+      # Configuration simple
+      KEY: 255d861b-5ea1-5996-9aa3-922530ec40b1
+      SECRET: 6116487b-cda1-52c2-b5b5-c8022c45e263
+      ADMIN_EMAIL: admin@simple.local
+      ADMIN_PASSWORD: simple123
+
+      # Cache
+      CACHE_ENABLED: "true"
+      CACHE_STORE: redis
+      REDIS_HOST: dragonfly
+      REDIS_PORT: 6379
+
+      # Basic config
+      PUBLIC_URL: http://localhost:8058
+      LOG_LEVEL: debug
+
+    ports:
+      - "8058:8055"
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  postgres_data:
+
+networks:
+  app:
+    driver: bridge

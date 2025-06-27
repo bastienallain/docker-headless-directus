@@ -1,0 +1,183 @@
+services:
+  # =================================
+  # DATABASE POSTGRESQL
+  # =================================
+  postgres:
+    image: postgres:17.5-alpine
+    container_name: directus-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-directus}
+      POSTGRES_USER: ${DB_USER:-directus}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-directus_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - redis_directus_dev_postgres:/var/lib/postgresql/data
+      - ../../shared/init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - directus_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-directus} -d ${DB_DATABASE:-directus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================
+  # REDIS POUR LE CACHE
+  # =================================
+  redis:
+    image: redis:7-alpine
+    container_name: directus-dev-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_directus_dev_cache:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - directus_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================
+  # DIRECTUS CMS
+  # =================================
+  directus:
+    image: directus/directus:latest
+    container_name: directus-dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Base de données
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-directus}
+      DB_USER: ${DB_USER:-directus}
+      DB_PASSWORD: ${DB_PASSWORD:-directus_password}
+
+      # Configuration générale
+      KEY: ${DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET}
+
+      # Admin utilisateur
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin_password_123}
+
+      # URLs et CORS
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+      CORS_ENABLED: true
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:*,http://127.0.0.1:*,http://0.0.0.0:*}
+
+      # Cache avec Redis
+      CACHE_ENABLED: true
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # Upload et storage
+      STORAGE_LOCATIONS: local
+      STORAGE_LOCAL_ROOT: ./uploads
+
+      # Configuration des images et assets
+      ASSETS_CACHE_TTL: 30d
+      ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 2000
+      ASSETS_TRANSFORM_IMAGE_QUALITY: 80
+      ASSETS_TRANSFORM_IMAGE_FORMAT: auto
+      ASSETS_TRANSFORM_IMAGE_TRANSFORMS: all
+      ASSETS_REQUIRE_AUTHENTICATION: false
+      
+      # Optimisations upload
+      FILES_MAX_UPLOAD_SIZE: 100MB
+      FILES_MIME_TYPE_ALLOW_LIST: image/jpeg,image/png,image/webp,image/gif,application/pdf
+
+      # Rate limiting
+      RATE_LIMITER_ENABLED: false
+      RATE_LIMITER_STORE: redis
+      RATE_LIMITER_REDIS_HOST: redis
+
+      # Email (désactivé pour les tests)
+      EMAIL_FROM: noreply@localhost
+      EMAIL_TRANSPORT: sendmail
+
+      # Extensions
+      EXTENSIONS_PATH: ./extensions
+      ASSETS_TRANSFORM_MAX_CONCURRENT: 4
+
+      # Logs
+      LOG_LEVEL: debug
+      LOG_STYLE: pretty
+
+      # Sécurité
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 7d
+      REFRESH_TOKEN_COOKIE_SECURE: false
+      REFRESH_TOKEN_COOKIE_SAME_SITE: lax
+
+      # Optimisations
+      CACHE_TTL: 30m
+      CACHE_AUTO_PURGE: true
+      QUERY_LIMIT_DEFAULT: 100
+      QUERY_LIMIT_MAX: 500
+
+      # Mode développement
+      NODE_ENV: development
+
+    volumes:
+      - redis_directus_dev_uploads:/directus/uploads
+      - redis_directus_dev_extensions:/directus/extensions
+      - ./snapshots:/directus/snapshots
+      - ./schema:/directus/schema
+    ports:
+      - "${DIRECTUS_PORT:-8055}:8055"
+    networks:
+      - directus_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # =================================
+  # ADMINER POUR DEBUG DATABASE
+  # =================================
+  adminer:
+    image: adminer:4.8.1-standalone
+    container_name: directus-dev-adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: dracula
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    networks:
+      - directus_network
+
+volumes:
+  redis_directus_dev_postgres:
+    driver: local
+  redis_directus_dev_cache:
+    driver: local
+  redis_directus_dev_uploads:
+    driver: local
+  redis_directus_dev_extensions:
+    driver: local
+
+networks:
+  directus_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

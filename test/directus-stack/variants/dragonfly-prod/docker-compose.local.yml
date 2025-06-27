@@ -1,0 +1,279 @@
+# Docker Compose pour test local de la prod optimisée
+
+services:
+  # =================================
+  # DATABASE POSTGRESQL
+  # =================================
+  postgres:
+    image: postgres:17.5-alpine
+    container_name: directus-test-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_DB_FILE: /run/secrets/postgres_db
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    secrets:
+      - postgres_db
+      - postgres_user
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../shared/init-db:/docker-entrypoint-initdb.d:ro
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./init-directus-optimizations.sql:/docker-entrypoint-initdb.d/99-directus-optimizations.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # =================================
+  # DRAGONFLY CACHE
+  # =================================
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: directus-test-prod-dragonfly
+    restart: always
+    ulimits:
+      memlock: -1
+    command: [
+      "dragonfly",
+      "--logtostderr",
+      "--cache_mode=true",
+      "--maxmemory=2GB",
+      "--requirepass_file=/run/secrets/dragonfly_password",
+      "--save_schedule=*/15 * * * *",
+      "--dir=/data",
+      "--dbfilename=dump.rdb",
+      "--num_shards=0",
+      "--conn_io_threads=0",
+      "--tcp_nodelay=true",
+      "--max_eviction_per_heartbeat=100",
+      "--tcp_backlog=1024",
+      "--hz=100"
+    ]
+    secrets:
+      - dragonfly_password
+    volumes:
+      - cache_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$(cat /run/secrets/dragonfly_password)", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # =================================
+  # DIRECTUS CMS
+  # =================================
+  directus:
+    image: directus/directus:latest
+    container_name: directus-test-prod
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    environment:
+      # Base de données
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE_FILE: /run/secrets/postgres_db
+      DB_USER_FILE: /run/secrets/postgres_user
+      DB_PASSWORD_FILE: /run/secrets/postgres_password
+      DB_SSL: "false"
+
+      # Configuration générale
+      KEY_FILE: /run/secrets/directus_key
+      SECRET_FILE: /run/secrets/directus_secret
+
+      # Admin (première installation)
+      ADMIN_EMAIL: admin@test-prod.local
+      ADMIN_PASSWORD: test_prod_admin_123
+
+      # URLs et CORS
+      PUBLIC_URL: http://localhost:8055
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "http://localhost:*,http://127.0.0.1:*"
+      CORS_CREDENTIALS: "true"
+
+      # Cache avec Dragonfly
+      CACHE_ENABLED: "true"
+      CACHE_STORE: redis
+      REDIS_HOST: dragonfly
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/dragonfly_password
+
+      # Upload et storage
+      STORAGE_LOCATIONS: local
+      STORAGE_LOCAL_ROOT: ./uploads
+
+      # Configuration des images et assets
+      ASSETS_TRANSFORM_IMAGE_MAX_DIMENSION: 4000
+      ASSETS_TRANSFORM_IMAGE_QUALITY: 85
+      ASSETS_TRANSFORM_IMAGE_FORMAT: auto
+      ASSETS_TRANSFORM_IMAGE_TRANSFORMS: key
+      ASSETS_REQUIRE_AUTHENTICATION: "false"
+      
+      # Optimisations upload
+      FILES_MAX_UPLOAD_SIZE: 100MB
+      FILES_MIME_TYPE_ALLOW_LIST: image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4
+
+      # Rate limiting
+      RATE_LIMITER_ENABLED: "true"
+      RATE_LIMITER_STORE: redis
+      RATE_LIMITER_REDIS_HOST: dragonfly
+      RATE_LIMITER_REDIS_PASSWORD_FILE: /run/secrets/dragonfly_password
+      RATE_LIMITER_GLOBAL_RATE: 100
+      RATE_LIMITER_GLOBAL_DURATION: 60
+
+      # Email (désactivé pour test)
+      EMAIL_FROM: noreply@test-prod.local
+      EMAIL_TRANSPORT: sendmail
+
+      # Extensions
+      EXTENSIONS_PATH: ./extensions
+      EXTENSIONS_AUTO_RELOAD: "false"
+
+      # Logs
+      LOG_LEVEL: info
+      LOG_STYLE: pretty
+
+      # Sécurité
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 7d
+      REFRESH_TOKEN_COOKIE_SECURE: "false"
+      REFRESH_TOKEN_COOKIE_SAME_SITE: lax
+      REFRESH_TOKEN_COOKIE_NAME: directus_refresh_token
+
+      # Optimisations cache
+      CACHE_TTL: 2h
+      CACHE_AUTO_PURGE: "true"
+      CACHE_SYSTEM_TTL: 4h
+      CACHE_SCHEMA: "true"
+      CACHE_PERMISSIONS: "true"
+      CACHE_VALUE_MAX_SIZE: 32MB
+      CACHE_HEALTHCHECK_THRESHOLD: 100
+      
+      # Optimisations requêtes
+      QUERY_LIMIT_DEFAULT: 100
+      QUERY_LIMIT_MAX: 2000
+      
+      # Pool de connexions database
+      DB_CONNECTION_TIMEOUT: 30000
+      DB_POOL_MIN: 10
+      DB_POOL_MAX: 50
+      
+      # Optimisations assets
+      ASSETS_CACHE_TTL: 7d
+      ASSETS_TRANSFORM_MAX_CONCURRENT: 8
+
+      # Mode production
+      NODE_ENV: production
+
+      # Telemetry
+      TELEMETRY: "false"
+
+    secrets:
+      - postgres_db
+      - postgres_user
+      - postgres_password
+      - directus_key
+      - directus_secret
+      - dragonfly_password
+    volumes:
+      - uploads_data:/directus/uploads
+      - extensions_data:/directus/extensions
+    ports:
+      - "8055:8055"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8055/server/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # =================================
+  # ADMINER POUR DEBUG
+  # =================================
+  adminer:
+    image: adminer:4.8.1-standalone
+    container_name: directus-test-prod-adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: dracula
+    ports:
+      - "8080:8080"
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local
+  cache_data:
+    driver: local
+  uploads_data:
+    driver: local
+  extensions_data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+secrets:
+  postgres_db:
+    external: true
+  postgres_user:
+    external: true
+  postgres_password:
+    external: true
+  directus_key:
+    external: true
+  directus_secret:
+    external: true
+  dragonfly_password:
+    external: true
